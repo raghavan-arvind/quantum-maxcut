@@ -2,38 +2,41 @@ from random import randint, choice
 from math import ceil
 
 class Graph():
-    def __init__(self, N, init=True):
+    def __init__(self, N, randomize=True):
         ''' Initialize a random graph with N vertices. '''
         self.N = N
         self.E = 0
         self.adj = {n:dict() for n in range(N)}
         
         # Randomly generate edges
-        if init:
+        if randomize:
             self.randomize()
 
     def randomize(self):
         ''' Randomly generate edges for this graph. '''
-        # all possible edges
+
+        # Generate list of tuples for all possible directed edges.
         all_possible_edges = set([(x,y) for x in range(self.N) for y in range(self.N) if x != y])
 
-        # sanity check, ensuring we generated the correct number of edges
+        # Sanity check, ensuring we generated the correct number of edges.
         e_gen = len(all_possible_edges) / 2
         e_shd = self.N * (self.N-1) / 2
         assert e_gen == e_shd , "%d != %d" % (e_gen, e_shd)
 
-        # can have 1 - N(N-1)/2 edges
+        # Choose a random number of edges for this graph to have. 
+        # Note, we stop at len/2 because we generated directed edges,
+        # so each edge counts twice.
         num_edges = randint(1, len(all_possible_edges)/2)
         for i in range(num_edges):
-            # choose an edge, remove it and its complement from list
+            # Choose an edge, remove it and its directed complement from the list.
             e = choice(list(all_possible_edges))
             all_possible_edges.remove(e)
             all_possible_edges.remove(e[::-1])
 
-            # unpack string edge into int vertices
+            # Unpack tuple into vertex ints.
             u, v = int(e[0]), int(e[1])
 
-            # generate random weight
+            # Choose a random weight for each edge.
             weight = randint(1, 100)
             self.add_edge(u, v, weight)
 
@@ -48,7 +51,11 @@ class Graph():
         assert len(bitstring) == self.N
 
         score = 0
-        # for every edge u,v in the graph
+
+        # For every edge u,v in the graph, add the weight
+        # of the edge if u,v belong to different cuts
+        # given this canddiate solution.
+
         for u in self.adj:
             for v in self.adj[u]:
                 if bitstring[u] != bitstring[v]:
@@ -63,8 +70,12 @@ class Graph():
             
         best = 0
         best_val = []
+
+        # Iterate over all possible candidate bitstrings
+        # Note: the bitstrings from 0 - N/2 are symmetrically
+        # equivalent to those above
         for i in range(ceil((2 ** self.N)/2)):
-            # 0-padded bitstring repr of i
+            # Convert number to 0-padded bitstring.
             bitstring = bin(i)[2:]
             bitstring = (self.N - len(bitstring)) * "0" + bitstring
 
@@ -77,6 +88,7 @@ class Graph():
         return best, best_val
 
     def edges_cut(self, bitstring):
+        ''' Given a candidate solution, return the number of edges that this solution cuts. '''
         num = 0
         for u in self.adj:
             for v in self.adj[u]:
@@ -96,9 +108,9 @@ if __name__ == '__main__':
         best_solution = g.optimal_score()[1][0]
         print(1.0 * g.edges_cut(best_solution) / edges)
     '''
-    
+
     '''
-    g = Graph(6, init=False)
+    g = Graph(6, randomize=False)
 
     g.add_edge(0, 3, 100)
     g.add_edge(1, 4, 100)
