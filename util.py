@@ -1,5 +1,9 @@
 from random import randint, choice
 from math import ceil
+from scipy.optimize import minimize
+import numpy as np
+from qiskit import register, available_backends, QuantumCircuit, QuantumRegister, \
+                    ClassicalRegister, execute
 
 class Graph():
     def __init__(self, N, randomize=True):
@@ -45,6 +49,14 @@ class Graph():
         ''' Add an edge to the graph. '''
         self.E += 1
         self.adj[u][v] = weight
+
+    def get_edges():
+        ''' Get a list of all edges. '''
+        edges = []
+        for u in adj:
+            for v in adj[u]:
+                edges.append((u, v, adj[u][v]))
+        return edges
 
     def get_score(self,bitstring):
         ''' Score a candidate solution. '''
@@ -99,7 +111,28 @@ class Graph():
     def __str__(self):
         return "Graph with %d vertices %d edges.\nAdjacency List: %s" % (self.N, self.E, self.adj)
 
+def get_expectation(x, graph):
+    gamma, beta = x
+
+    # Construct quantum circuit.
+    q = QuantumRegister(graph.N + graph.E)
+    c = ClassicalRegister(graph.N + graph.E)
+
+    qc = QuantumCircuit(q, c)
+
+
+    qc.measure(q, c)
+
+    job = execute(qc, backend='ibmq_qasm_simulator', shots=1024)
+    results = job.result()
+
+    print(results.get_counts(qc))
+
+
 if __name__ == '__main__':
+    g = Graph(10)
+    get_expectation([np.pi, np.pi], g)
+
     '''
     for _ in range(100):
         g = Graph(15)
@@ -128,5 +161,5 @@ if __name__ == '__main__':
     best_solution = g.optimal_score()[1][0]
     print(1.0 * g.edges_cut(best_solution) / g.E)
     '''
-    pass
+
 
