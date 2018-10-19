@@ -2,8 +2,20 @@ from random import randint, choice
 from math import ceil
 from scipy.optimize import minimize
 import numpy as np
+import sys
+import pandas as pd
 from qiskit import register, available_backends, QuantumCircuit, QuantumRegister, \
                     ClassicalRegister, execute
+import Qconfig
+
+register(Qconfig.APItoken, Qconfig.config["url"])
+
+DEBUG = True
+def debug(string):
+    if DEBUG:
+        sys.stdout.write(string)
+        sys.stdout.flush()
+
 
 class Graph():
     def __init__(self, N, randomize=True):
@@ -11,6 +23,11 @@ class Graph():
         self.N = N
         self.E = 0
         self.adj = {n:dict() for n in range(N)}
+
+        # For storing information about each run.
+        self.currentScore = float('-inf')
+        self.currentBest = ""
+        self.runs = []
         
         # Randomly generate edges
         if randomize:
@@ -50,12 +67,12 @@ class Graph():
         self.E += 1
         self.adj[u][v] = weight
 
-    def get_edges():
+    def get_edges(self):
         ''' Get a list of all edges. '''
         edges = []
-        for u in adj:
-            for v in adj[u]:
-                edges.append((u, v, adj[u][v]))
+        for u in self.adj:
+            for v in self.adj[u]:
+                edges.append((u, v, self.adj[u][v]))
         return edges
 
     def get_score(self,bitstring):
@@ -107,59 +124,127 @@ class Graph():
                 if bitstring[u] != bitstring[v]:
                     num += 1
         return num
-    
+
+    def update_score(self, bitstring):
+        ''' Scores the given bitstring and keeps track of best. '''
+        score = self.get_score(bitstring)
+        if score > self.currentScore:
+            self.currentScore = score
+            self.currentBest = bitstring
+        return score
+
+    def add_run(self, gamma, beta, expected_value):
+        ''' Save the data from each run iteration. '''
+        self.runs.append([len(self.runs), gamma, beta, expected_value])
+
+    def save_results(self, filename):
+        df = pd.DataFrame(self.runs, 
+                columns=['Iter','Gamma', 'Beta', 'Expected Value']).set_index('Iter')
+        df.to_csv(filename)
+
     def __str__(self):
         return "Graph with %d vertices %d edges.\nAdjacency List: %s" % (self.N, self.E, self.adj)
 
-def get_expectation(x, graph):
+def get_expectation(x, graph, NUM_SHOTS=10):
     gamma, beta = x
+
+    debug("Cost of Gamma: %s, beta: %s... " % (gamma, beta))
 
     # Construct quantum circuit.
     q = QuantumRegister(graph.N + graph.E)
-    c = ClassicalRegister(graph.N + graph.E)
-
+    c = ClassicalRegister(graph.N)
     qc = QuantumCircuit(q, c)
 
+    # Apply hadamard to all inputs.
+    for i in range(graph.N):
+        qc.h(q[i])
 
-    qc.measure(q, c)
+    # Apply V for all edges.
+    for edge_ind, edge in enumerate(g.get_edges()):
+        u, v, w = edge
+        edge_ind += graph.N
 
-    job = execute(qc, backend='ibmq_qasm_simulator', shots=1024)
+        # Apply CNots.
+        qc.cx(q[u], q[edge_ind])
+        qc.cx(q[v], q[edge_ind]) 
+        qc.u1(gamma*w, q[edge_ind]) 
+
+        # Apply CNots.
+        qc.cx(q[v], q[edge_ind])
+        qc.cx(q[u], q[edge_ind])
+
+    # Apply W to all vertices.
+    for i in range(graph.N):
+        qc.h(q[i])
+        qc.u1(-2*beta, q[i])
+        qc.h(q[i])
+
+
+    # Measure the qubits.
+    for i in range(graph.N):
+        qc.measure(q[i], c[i])
+
+    # Run the simluator.
+    job = execute(qc, backend='ibmq_qasm_simulator', shots=NUM_SHOTS)
     results = job.result()
+    result_dict = results.get_counts(qc)
 
-    print(results.get_counts(qc))
+    debug("done!\n")
+
+    # Calculate the expected value of the candidate bitstrings.
+    exp = 0
+    for bitstring in result_dict:
+        prob = np.float(result_dict[bitstring]) / NUM_SHOTS
+        score = g.update_score(bitstring)
+
+        debug("\t\t%s: %s\n" % (bitstring, score))
+
+        # Expected value is the score of each bitstring times
+        # probability of it occuring.
+        exp += score * prob
+
+    debug("\tExpected Value: %s\n" % (exp))
+    debug("\tBest Found Solution: %s, %s\n" % (g.currentScore, g.currentBest))
+
+    g.add_run(gamma, beta, exp)
+
+    return -1*exp # -1 bc we want to minimize
 
 
 if __name__ == '__main__':
-    g = Graph(10)
-    get_expectation([np.pi, np.pi], g)
+    filename = "results.csv"
 
-    '''
-    for _ in range(100):
-        g = Graph(15)
-        edges = g.E
+    print("-- Building Graph--")
+    g = Graph(5)
+    print(g)
 
-        best_solution = g.optimal_score()[1][0]
-        print(1.0 * g.edges_cut(best_solution) / edges)
-    '''
+    best, best_val = g.optimal_score()
+    print("Optimal Solution: %s, %s" % (best, best_val[0]))
+    #print("Best Found Solution: %s, %s" % (g.currentScore, g.currentBest))
 
-    '''
-    g = Graph(6, randomize=False)
+    # do the thing
+    gamma_start = np.pi
+    beta_start = np.pi/2
 
-    g.add_edge(0, 3, 100)
-    g.add_edge(1, 4, 100)
-    g.add_edge(2, 5, 100)
+    print("\n-- Starting optimization --")
+    try:
+        res = minimize(get_expectation, [gamma_start, beta_start], args=(g),
+                options=dict(maxiter=2,disp=True), bounds=[(0, 2*np.pi), (0,np.pi)])
+    except KeyboardInterrupt:
+        debug("\nWriting to %s\n" % (filename))
+        g.save_results(filename)
+    finally:
+        exit()
 
-    g.add_edge(0, 1, 1)
-    g.add_edge(0, 2, 1)
-    g.add_edge(1, 2, 1)
+    print("-- Finished optimization  --\n")
+    print("Gamma: %s, Beta: %s" % (res.x[0], res.x[1]))
+    print("Final cost: %s" % (res.maxcv))
 
-    g.add_edge(3, 4, 1)
-    g.add_edge(3, 5, 1)
-    g.add_edge(4, 5, 1)
+    best, best_val = g.optimal_score()
+    print("Optimal Solution: %s, %s" % (best, best_val[0]))
+    print("Best Found Solution: %s, %s" % (g.currentScore, g.currentBest))
 
-    print(g.optimal_score())
-    best_solution = g.optimal_score()[1][0]
-    print(1.0 * g.edges_cut(best_solution) / g.E)
-    '''
-
+    debug("\nWriting to %s\n" % (filename))
+    g.save_results(filename)
+    
 
