@@ -1,16 +1,18 @@
-from random import randint, choice
+from random import randint, choice, uniform
 from math import ceil
+import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 import numpy as np
 import sys
 import pandas as pd
 from qiskit import register, available_backends, QuantumCircuit, QuantumRegister, \
-                    ClassicalRegister, execute
+        ClassicalRegister, execute
 import Qconfig
+from statistics import stdev, mean
 
 register(Qconfig.APItoken, Qconfig.config["url"])
 
-DEBUG = True
+DEBUG = False
 def debug(string):
     if DEBUG:
         sys.stdout.write(string)
@@ -28,7 +30,7 @@ class Graph():
         self.currentScore = float('-inf')
         self.currentBest = ""
         self.runs = []
-        
+
         # Randomly generate edges
         if randomize:
             self.randomize()
@@ -96,7 +98,7 @@ class Graph():
         Returns (score, solutions) holding the best possible solution to the 
         MaxCut problem with this graph.
         '''
-            
+
         best = 0
         best_val = []
 
@@ -145,43 +147,41 @@ class Graph():
     def __str__(self):
         return "Graph with %d vertices %d edges.\nAdjacency List: %s" % (self.N, self.E, self.adj)
 
-def get_expectation(x, graph, NUM_SHOTS=10):
+def get_expectation(x, g, NUM_SHOTS=1024):
     gamma, beta = x
 
     debug("Cost of Gamma: %s, beta: %s... " % (gamma, beta))
 
     # Construct quantum circuit.
-    q = QuantumRegister(graph.N + graph.E)
-    c = ClassicalRegister(graph.N)
+    q = QuantumRegister(g.N)
+    c = ClassicalRegister(g.N)
     qc = QuantumCircuit(q, c)
 
     # Apply hadamard to all inputs.
-    for i in range(graph.N):
+    for i in range(g.N):
         qc.h(q[i])
 
     # Apply V for all edges.
-    for edge_ind, edge in enumerate(g.get_edges()):
+    for edge in g.get_edges():
         u, v, w = edge
-        edge_ind += graph.N
 
         # Apply CNots.
-        qc.cx(q[u], q[edge_ind])
-        qc.cx(q[v], q[edge_ind]) 
-        qc.u1(gamma*w, q[edge_ind]) 
+        qc.cx(q[u], q[v])
+
+        qc.u1(gamma*w, q[v]) 
 
         # Apply CNots.
-        qc.cx(q[v], q[edge_ind])
-        qc.cx(q[u], q[edge_ind])
+        qc.cx(q[u], q[v])
 
     # Apply W to all vertices.
-    for i in range(graph.N):
+    for i in range(g.N):
         qc.h(q[i])
         qc.u1(-2*beta, q[i])
         qc.h(q[i])
 
 
-    # Measure the qubits.
-    for i in range(graph.N):
+    # Measure the qubits (avoiding ancilla).
+    for i in range(g.N):
         qc.measure(q[i], c[i])
 
     # Run the simluator.
@@ -197,7 +197,7 @@ def get_expectation(x, graph, NUM_SHOTS=10):
         prob = np.float(result_dict[bitstring]) / NUM_SHOTS
         score = g.update_score(bitstring)
 
-        debug("\t\t%s: %s\n" % (bitstring, score))
+        #debug("\t\t%s: %s\n" % (bitstring, score))
 
         # Expected value is the score of each bitstring times
         # probability of it occuring.
@@ -210,21 +210,17 @@ def get_expectation(x, graph, NUM_SHOTS=10):
 
     return -1*exp # -1 bc we want to minimize
 
-
-if __name__ == '__main__':
-    filename = "results.csv"
-
-    print("-- Building Graph--")
-    g = Graph(5)
-    print(g)
+def run_optimizer(num_nodes, filename="results.csv"):
+    debug("-- Building Graph--\n")
+    g = Graph(num_nodes)
+    debug(str(g) + "\n")
 
     best, best_val = g.optimal_score()
-    print("Optimal Solution: %s, %s" % (best, best_val[0]))
-    #print("Best Found Solution: %s, %s" % (g.currentScore, g.currentBest))
+    debug("Optimal Solution: %s, %s\n" % (best, best_val[0]))
 
-    # do the thing
-    gamma_start = np.pi
-    beta_start = np.pi/2
+    # Initialize and run the algorithm.
+    gamma_start = uniform(0, 2*np.pi)
+    beta_start = uniform(0, np.pi)
 
     print("\n-- Starting optimization --")
     try:
@@ -236,15 +232,65 @@ if __name__ == '__main__':
     finally:
         exit()
 
-    print("-- Finished optimization  --\n")
-    print("Gamma: %s, Beta: %s" % (res.x[0], res.x[1]))
-    print("Final cost: %s" % (res.maxcv))
+    debug("-- Finished optimization  --\n")
+    debug("Gamma: %s, Beta: %s\n" % (res.x[0], res.x[1]))
+    debug("Final cost: %s\n" % (res.maxcv))
 
     best, best_val = g.optimal_score()
-    print("Optimal Solution: %s, %s" % (best, best_val[0]))
-    print("Best Found Solution: %s, %s" % (g.currentScore, g.currentBest))
+    debug("Optimal Solution: %s, %s\n" % (best, best_val[0]))
+    debug("Best Found Solution: %s, %s\n" % (g.currentScore, g.currentBest))
 
     debug("\nWriting to %s\n" % (filename))
     g.save_results(filename)
-    
 
+
+
+if __name__ == '__main__':
+    # Choose some random starting beta and graph.
+    beta = 0.79
+    g = Graph(7)
+
+    
+    # RUNS # of runs at each gamma for error bars.
+    RUNS = 3
+
+    # Keep track of gammas, expected values, for plotting.
+    gammas = []
+    exps = [[] for i in range(RUNS)]
+
+    # The maximum possible expected value is the maximum possible weighted cut.
+    opt = g.optimal_score()[0]
+    print("Optimal score: %s" % (opt))
+
+    STEP = 0.01
+    MIN = 0
+    #MAX = 2*np.pi
+    MAX = .1
+
+    for gamma in np.linspace(MIN, MAX, int((MAX-MIN)/STEP)):
+        gammas.append(gamma)
+
+        # Calculate expected values.
+        for i in range(RUNS):
+            exps[i].append(-1 * get_expectation([gamma, beta], g))
+
+        print("gamma: %s" % (gamma))
+
+    fig, ax = plt.subplots()
+    for i in range(RUNS):
+        ax.plot(x=gammas, y=exps[i])
+
+    #ax.errorbar(x=gammas, y=exp, yerr=std, marker='+', markersize=10)
+    #ax.axhline(y=opt, xmin=0, xmax=2*np.pi, color='r', label="Max Exp. Value")
+    #ax.legend(loc=2)
+
+    plt.title("Effect of Varying Gamma")
+    plt.xlabel("Gamma")
+    plt.ylabel("Expected Value")
+
+    for i in range(RUNS):
+        print(gammas)
+        print(exps[i])
+        plt.plot(gammas, exps[i])
+
+    plt.show()
