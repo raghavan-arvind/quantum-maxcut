@@ -1,14 +1,16 @@
-from random import randint, choice, uniform
-from math import ceil
+import time
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
 import numpy as np
 import sys
 import pandas as pd
+import Qconfig
+from tqdm import tqdm
+from random import randint, choice, uniform
+from math import ceil
+from scipy.optimize import minimize
+from statistics import stdev, mean
 from qiskit import register, available_backends, QuantumCircuit, QuantumRegister, \
         ClassicalRegister, execute
-import Qconfig
-from statistics import stdev, mean
 
 register(Qconfig.APItoken, Qconfig.config["url"])
 
@@ -60,7 +62,8 @@ class Graph():
             u, v = int(e[0]), int(e[1])
 
             # Choose a random weight for each edge.
-            weight = randint(1, 100)
+            #weight = randint(1, 100)
+            weight = 1
             self.add_edge(u, v, weight)
 
 
@@ -262,12 +265,13 @@ if __name__ == '__main__':
     opt = g.optimal_score()[0]
     print("Optimal score: %s" % (opt))
 
-    STEP = 0.01
+    STEP = 0.02
     MIN = 0
-    #MAX = 2*np.pi
-    MAX = .1
+    MAX = 2*np.pi
+    #MAX = 1
 
-    for gamma in np.linspace(MIN, MAX, int((MAX-MIN)/STEP)):
+    gams = np.linspace(MIN, MAX, int((MAX-MIN)/STEP))
+    for gamma in tqdm(gams):
         gammas.append(gamma)
 
         # Calculate expected values.
@@ -276,9 +280,11 @@ if __name__ == '__main__':
 
         print("gamma: %s" % (gamma))
 
+    '''
     fig, ax = plt.subplots()
     for i in range(RUNS):
         ax.plot(x=gammas, y=exps[i])
+    '''
 
     #ax.errorbar(x=gammas, y=exp, yerr=std, marker='+', markersize=10)
     #ax.axhline(y=opt, xmin=0, xmax=2*np.pi, color='r', label="Max Exp. Value")
@@ -289,8 +295,6 @@ if __name__ == '__main__':
     plt.ylabel("Expected Value")
 
     for i in range(RUNS):
-        print(gammas)
-        print(exps[i])
         plt.plot(gammas, exps[i])
 
     plt.show()
