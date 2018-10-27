@@ -17,16 +17,17 @@ register(Qconfig.APItoken, Qconfig.config["url"])
 DEBUG = False
 def debug(string):
     if DEBUG:
-        sys.stdout.write(string)
+        sys.stdout.write(str(string))
         sys.stdout.flush()
 
 
 class Graph():
-    def __init__(self, N, randomize=True):
+    def __init__(self, N, randomize=True, weighted=True):
         ''' Initialize a random graph with N vertices. '''
         self.N = N
         self.E = 0
         self.adj = {n:dict() for n in range(N)}
+        self.weighted = weighted
 
         # For storing information about each run.
         self.currentScore = float('-inf')
@@ -62,9 +63,47 @@ class Graph():
             u, v = int(e[0]), int(e[1])
 
             # Choose a random weight for each edge.
-            #weight = randint(1, 100)
-            weight = 1
+            weight = 1 if not self.weighted else randint(-100, 100)
+
             self.add_edge(u, v, weight)
+
+    def normalized(self, gamma, normMin=-np.pi, normMax=np.pi):
+        ''' Return dict of edges normalized between (-pi, pi) for w*gamma. '''
+        # If gamma is 0, weights*gamma is zero anyways, so just return normal weights.
+        # If all weights are 1, then this is a no-op as well.
+        if gamma == 0 or not self.weighted: return self.adj
+        assert gamma > 0, "Gamma must be positive"
+
+        # Find the minimum and maximum weights.
+        minWt, maxWt = float('inf'), float('-inf')
+        for u in self.adj:
+            for v in self.adj[u]:
+                minWt = min(minWt, self.adj[u][v])
+                maxWt = max(maxWt, self.adj[u][v])
+
+        # We want to normalize weight*gamma, not just weight.
+        minWt *= gamma
+        maxWt *= gamma
+
+        # Using normalization formula:
+        # norm_gamma, normalizes w*gamma, then divides by gamma s.t
+        # w*gamma will be the normalized value.
+        norm = lambda x: (normMax - normMin) / (maxWt - minWt) * (float(x) - minWt) + normMin
+        norm_gamma = lambda w: norm(w * gamma) / gamma
+
+        # Create dict with normalized values.
+        norm_edges = {u:dict() for u in self.adj}
+        for u in self.adj:
+            for v in self.adj[u]:
+                n = norm_gamma(self.adj[u][v])
+
+                # Asserts have some tolerance for floating point error.
+                assert n*gamma+0.1 >= normMin, "%s must be >= %s" % (n*gamma, normMin)
+                assert n*gamma-0.1 <= normMax, "%s must be <= %s" % (n*gamma, normMax)
+                norm_edges[u][v] = n
+
+        debug("gamma: %s, edges: %s\n" % (gamma, norm_edges))
+        return norm_edges
 
 
     def add_edge(self, u, v, weight):
@@ -72,12 +111,14 @@ class Graph():
         self.E += 1
         self.adj[u][v] = weight
 
-    def get_edges(self):
+    def get_edges(self, gamma=None):
         ''' Get a list of all edges. '''
+        adj = self.adj if gamma is None else self.normalized(gamma)
+
         edges = []
-        for u in self.adj:
-            for v in self.adj[u]:
-                edges.append((u, v, self.adj[u][v]))
+        for u in adj:
+            for v in adj[u]:
+                edges.append((u, v, adj[u][v]))
         return edges
 
     def get_score(self,bitstring):
@@ -150,31 +191,35 @@ class Graph():
     def __str__(self):
         return "Graph with %d vertices %d edges.\nAdjacency List: %s" % (self.N, self.E, self.adj)
 
-def get_expectation(x, g, NUM_SHOTS=1024):
-    gamma, beta = x
+def get_expectation(params, g, NUM_SHOTS=1024):
+    gamma, beta = params
 
     debug("Cost of Gamma: %s, beta: %s... " % (gamma, beta))
 
     # Construct quantum circuit.
-    q = QuantumRegister(g.N)
+    q = QuantumRegister(g.N+1)
     c = ClassicalRegister(g.N)
     qc = QuantumCircuit(q, c)
+
+    anc = g.N
 
     # Apply hadamard to all inputs.
     for i in range(g.N):
         qc.h(q[i])
 
     # Apply V for all edges.
-    for edge in g.get_edges():
+    for edge in g.get_edges(gamma=gamma):
         u, v, w = edge
 
         # Apply CNots.
-        qc.cx(q[u], q[v])
+        qc.cx(q[u], q[anc])
+        qc.cx(q[v], q[anc])
 
-        qc.u1(gamma*w, q[v]) 
+        qc.u1(gamma*w, q[anc]) 
 
         # Apply CNots.
-        qc.cx(q[u], q[v])
+        qc.cx(q[v], q[anc])
+        qc.cx(q[u], q[anc])
 
     # Apply W to all vertices.
     for i in range(g.N):
@@ -188,7 +233,7 @@ def get_expectation(x, g, NUM_SHOTS=1024):
         qc.measure(q[i], c[i])
 
     # Run the simluator.
-    job = execute(qc, backend='ibmq_qasm_simulator', shots=NUM_SHOTS)
+    job = execute(qc, backend='local_qasm_simulator', shots=NUM_SHOTS)
     results = job.result()
     result_dict = results.get_counts(qc)
 
@@ -225,7 +270,7 @@ def run_optimizer(num_nodes, filename="results.csv"):
     gamma_start = uniform(0, 2*np.pi)
     beta_start = uniform(0, np.pi)
 
-    print("\n-- Starting optimization --")
+    debug("\n-- Starting optimization --")
     try:
         res = minimize(get_expectation, [gamma_start, beta_start], args=(g),
                 options=dict(maxiter=2,disp=True), bounds=[(0, 2*np.pi), (0,np.pi)])
@@ -251,7 +296,9 @@ def run_optimizer(num_nodes, filename="results.csv"):
 if __name__ == '__main__':
     # Choose some random starting beta and graph.
     beta = 0.79
-    g = Graph(7)
+    #g = Graph(5)
+    g = Graph(5, weighted=False)
+    debug(str(g) + "\n")
 
     
     # RUNS # of runs at each gamma for error bars.
@@ -263,12 +310,12 @@ if __name__ == '__main__':
 
     # The maximum possible expected value is the maximum possible weighted cut.
     opt = g.optimal_score()[0]
-    print("Optimal score: %s" % (opt))
+    debug("Optimal score: %s\n" % (opt))
 
     STEP = 0.02
     MIN = 0
-    MAX = 2*np.pi
-    #MAX = 1
+    #MAX = 2*np.pi
+    MAX = 0.2
 
     gams = np.linspace(MIN, MAX, int((MAX-MIN)/STEP))
     for gamma in tqdm(gams):
@@ -277,8 +324,6 @@ if __name__ == '__main__':
         # Calculate expected values.
         for i in range(RUNS):
             exps[i].append(-1 * get_expectation([gamma, beta], g))
-
-        print("gamma: %s" % (gamma))
 
     '''
     fig, ax = plt.subplots()
