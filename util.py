@@ -247,6 +247,35 @@ def run_optimizer(num_nodes, filename="results.csv"):
     g.save_results(filename)
 
 
+def costs_vs_size():
+    '''
+    For several random problem instances, plot the cost of the output state.
+    Plot average, maximum and minimum cost.  How do these compare
+    '''
+    num_verts = [5,10,15,20]
+    instances = [Graph(v) for v in num_verts]
+    start_gamma = .5
+    start_beta = .5
+    RUNS = 3
+    exps = [[] for i in range(len(num_verts))]
+
+    for g, graph in enumerate(instances):
+        for r in range(RUNS):
+            exps[g].append(-1 * get_expectation([start_gamma, start_beta], graph))
+
+    plt.title("Cost Distribution across Varying Graph Sizes")
+    plt.xlabel("Number of Vertices")
+    plt.ylabel("Cost")
+
+    averages = [mean(instance) for instance in exps]
+    lows = [min(instance) for instance in exps]
+    highs = [max(instance) for instance in exps]
+
+    plt.plot(num_verts, averages)
+    plt.plot(num_verts, lows)
+    plt.plot(num_verts, highs)
+
+    plt.show()
 
 if __name__ == '__main__':
     # Choose some random starting beta and graph.
@@ -298,32 +327,3 @@ if __name__ == '__main__':
 
     plt.show()
 
-
-    '''
-    For several random problem instances, plot the cost of the output state.
-    Plot average, maximum and minimum cost.  How do these compare
-    '''
-    num_verts = [5,10,15,20]
-    instances = [Graph(v) for v in num_verts]
-    start_gamma = .5
-    start_beta = .5
-    RUNS = 3
-    exps = [[] for i in range(len(num_verts))]
-
-    for g, graph in enumerate(instances):
-        for r in range(RUNS):
-            exps[g].append(-1 * get_expectation([start_gamma, start_beta], graph))
-
-    plt.title("Cost Distribution across Varying Graph Sizes")
-    plt.xlabel("Number of Vertices")
-    plt.ylabel("Cost")
-
-    averages = [mean(instance) for instance in exps]
-    lows = [min(instance) for instance in exps]
-    highs = [max(instance) for instance in exps]
-
-    plt.plot(num_verts, averages)
-    plt.plot(num_verts, lows)
-    plt.plot(num_verts, highs)
-
-    plt.show()
