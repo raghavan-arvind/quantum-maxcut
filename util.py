@@ -62,8 +62,9 @@ class Graph():
             u, v = int(e[0]), int(e[1])
 
             # Choose a random weight for each edge.
-            #weight = randint(1, 100)
-            weight = 1
+            weight = randint(-100, 100)
+
+            #weight = 1
             self.add_edge(u, v, weight)
 
 
@@ -188,7 +189,7 @@ def get_expectation(x, g, NUM_SHOTS=1024):
         qc.measure(q[i], c[i])
 
     # Run the simluator.
-    job = execute(qc, backend='ibmq_qasm_simulator', shots=NUM_SHOTS)
+    job = execute(qc, backend='local_qasm_simulator', shots=NUM_SHOTS)
     results = job.result()
     result_dict = results.get_counts(qc)
 
@@ -200,8 +201,6 @@ def get_expectation(x, g, NUM_SHOTS=1024):
         prob = np.float(result_dict[bitstring]) / NUM_SHOTS
         score = g.update_score(bitstring)
 
-        #debug("\t\t%s: %s\n" % (bitstring, score))
-
         # Expected value is the score of each bitstring times
         # probability of it occuring.
         exp += score * prob
@@ -211,7 +210,7 @@ def get_expectation(x, g, NUM_SHOTS=1024):
 
     g.add_run(gamma, beta, exp)
 
-    return -1*exp # -1 bc we want to minimize
+    return exp # bc we want to minimize
 
 def run_optimizer(num_nodes, filename="results.csv"):
     debug("-- Building Graph--\n")
@@ -225,9 +224,12 @@ def run_optimizer(num_nodes, filename="results.csv"):
     gamma_start = uniform(0, 2*np.pi)
     beta_start = uniform(0, np.pi)
 
-    print("\n-- Starting optimization --")
+    # minimize wants lower values, so negate expectation.
+    neg_get_expectatation = lambda x, y: -1 * get_expectation(x, y)
+
+    debug("\n-- Starting optimization --\n")
     try:
-        res = minimize(get_expectation, [gamma_start, beta_start], args=(g),
+        res = minimize(neg_get_expectation, [gamma_start, beta_start], args=(g),
                 options=dict(maxiter=2,disp=True), bounds=[(0, 2*np.pi), (0,np.pi)])
     except KeyboardInterrupt:
         debug("\nWriting to %s\n" % (filename))
@@ -247,83 +249,116 @@ def run_optimizer(num_nodes, filename="results.csv"):
     g.save_results(filename)
 
 
-def costs_vs_size():
+#def instance_cost(num_instances=30, num_vert=10, num_runs=5):
+def instance_cost(num_instances=5, num_vert=5, num_runs=5):
     '''
     For several random problem instances, plot the cost of the output state.
-    Plot average, maximum and minimum cost.  How do these compare
+    Plot average, maximum and minimum cost.
     '''
-    num_verts = [5,10,15,20]
-    instances = [Graph(v) for v in num_verts]
-    start_gamma = .5
-    start_beta = .5
-    RUNS = 3
-    exps = [[] for i in range(len(num_verts))]
 
-    for g, graph in enumerate(instances):
-        for r in range(RUNS):
-            exps[g].append(-1 * get_expectation([start_gamma, start_beta], graph))
+    # Prepare several random instances of the problem.
+    instances = [Graph(num_vert) for _ in range(num_instances)]
 
-    plt.title("Cost Distribution across Varying Graph Sizes")
-    plt.xlabel("Number of Vertices")
+    # Choose starting values for gamma and beta.
+
+    # For holding iteration number and expected values.
+    its, exps, opt = [], [], []
+
+    # Calculate expected values.
+    for it, graph in tqdm(enumerate(instances)):
+
+        vals = []
+        for _ in range(num_runs):
+            # Use random gamma, beta for each run.
+            gamma = uniform(0, 2*np.pi)
+            beta = uniform(0, np.pi)
+
+            vals.append(get_expectation([gamma, beta], graph))
+
+        # Save results.
+        its.append(it+1)
+        exps.append(vals)
+        opt.append(graph.optimal_score()[0])
+
+
+    plt.title("Costs of Random Instances")
+    plt.xlabel("Iteration Number")
     plt.ylabel("Cost")
 
-    averages = [mean(instance) for instance in exps]
-    lows = [min(instance) for instance in exps]
-    highs = [max(instance) for instance in exps]
+    # Sort by optimal value just so it's pleasant to look at.
+    exps = [x for _,x in sorted(zip(opt,exps), key=lambda pair: pair[0])]
+    opt = sorted(opt)
 
-    plt.plot(num_verts, averages)
-    plt.plot(num_verts, lows)
-    plt.plot(num_verts, highs)
+    averages = [mean(ex) for ex in exps]
+    lows = [min(ex) for ex in exps]
+    highs = [max(ex) for ex in exps]
+
+    plt.plot(its, averages, color='blue', label='Average Cost')
+    plt.plot(its, lows, color='green', label='Minimum Cost')
+    plt.plot(its, highs, color='orange', label='Maximum Cost')
+    plt.plot(its, opt, color='red', label='Optimal Cost')
+
+    plt.legend()
 
     plt.show()
 
-if __name__ == '__main__':
-    # Choose some random starting beta and graph.
-    beta = 0.79
-    g = Graph(7)
+def hold_constant():
+    ''' Plots expected value vs. gamma/beta, holding the rest of the variables constant.'''
+
+    # Choose some random starting gamma and graph.
+    gamma = 2.251
+    g = Graph(5)
 
     # RUNS # of runs at each gamma for error bars.
     RUNS = 3
 
     # Keep track of gammas, expected values, for plotting.
-    gammas = []
-    exps = [[] for i in range(RUNS)]
+    betas, exp, std = [], [], []
 
     # The maximum possible expected value is the maximum possible weighted cut.
     opt = g.optimal_score()[0]
-    print("Optimal score: %s" % (opt))
+    debug("Optimal score: %s\n" % (opt))
 
-    STEP = 0.02
+    NUM_RUNS = 32
     MIN = 0
-    MAX = 2*np.pi
+    MAX = np.pi
     #MAX = 1
 
-    gams = np.linspace(MIN, MAX, int((MAX-MIN)/STEP))
-    for gamma in tqdm(gams):
-        gammas.append(gamma)
+    bets = np.linspace(MIN, MAX, NUM_RUNS)
+    for beta in tqdm(bets):
+        betas.append(beta)
 
         # Calculate expected values.
+        vals = []
         for i in range(RUNS):
-            exps[i].append(-1 * get_expectation([gamma, beta], g))
+            vals.append(get_expectation([gamma, beta], g))
 
-        print("gamma: %s" % (gamma))
+        # Calculate mean, standard deviation.
+        exp.append(mean(vals))
+        std.append(stdev(vals))
 
-    '''
+
     fig, ax = plt.subplots()
+    '''
     for i in range(RUNS):
         ax.plot(x=gammas, y=exps[i])
     '''
 
-    #ax.errorbar(x=gammas, y=exp, yerr=std, marker='+', markersize=10)
+    ax.errorbar(x=betas, y=exp, yerr=std, fmt='o-', markersize=10)
     #ax.axhline(y=opt, xmin=0, xmax=2*np.pi, color='r', label="Max Exp. Value")
-    #ax.legend(loc=2)
+    ax.legend(loc=2)
 
-    plt.title("Effect of Varying Gamma")
-    plt.xlabel("Gamma")
-    plt.ylabel("Expected Value")
+    ax.set_title("Effect of Varying Beta with Gamma = %s" % (gamma))
+    ax.set_xlabel("Beta")
+    ax.set_ylabel("Expected Value")
 
+    '''
     for i in range(RUNS):
         plt.plot(gammas, exps[i])
+    '''
 
     plt.show()
+
+if __name__ == '__main__':
+    instance_cost()
 
