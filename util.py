@@ -189,7 +189,7 @@ def get_expectation(x, g, NUM_SHOTS=1024):
         qc.measure(q[i], c[i])
 
     # Run the simluator.
-    job = execute(qc, backend='local_qasm_simulator', shots=NUM_SHOTS)
+    job = execute(qc, backend='ibmq_qasm_simulator', shots=NUM_SHOTS)
     results = job.result()
     result_dict = results.get_counts(qc)
 
@@ -249,8 +249,7 @@ def run_optimizer(num_nodes, filename="results.csv"):
     g.save_results(filename)
 
 
-#def instance_cost(num_instances=30, num_vert=10, num_runs=5):
-def instance_cost(num_instances=5, num_vert=5, num_runs=5):
+def instance_cost(num_instances=20, num_vert=10, num_runs=3):
     '''
     For several random problem instances, plot the cost of the output state.
     Plot average, maximum and minimum cost.
@@ -264,9 +263,9 @@ def instance_cost(num_instances=5, num_vert=5, num_runs=5):
     # For holding iteration number and expected values.
     its, exps, opt = [], [], []
 
+    it = 1
     # Calculate expected values.
-    for it, graph in tqdm(enumerate(instances)):
-
+    for graph in tqdm(instances):
         vals = []
         for _ in range(num_runs):
             # Use random gamma, beta for each run.
@@ -276,9 +275,10 @@ def instance_cost(num_instances=5, num_vert=5, num_runs=5):
             vals.append(get_expectation([gamma, beta], graph))
 
         # Save results.
-        its.append(it+1)
+        its.append(it)
         exps.append(vals)
         opt.append(graph.optimal_score()[0])
+        it += 1
 
 
     plt.title("Costs of Random Instances")
