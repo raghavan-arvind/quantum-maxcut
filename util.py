@@ -320,19 +320,78 @@ def get_expectation(x, g, NUM_SHOTS=1024):
 
     # Try updating progress bar if defined.
     try:
-        pbar.update(1)
-    except:
-        pass
-    
-    return exp # bc we want to minimize
+        res = minimize(neg_get_expectation, [gamma_start, beta_start], args=(g),
+                options=dict(maxiter=2,disp=True), bounds=[(0, 2*np.pi), (0,np.pi)])
+    except KeyboardInterrupt:
+        debug("\nWriting to %s\n" % (filename))
+        g.save_results(filename)
+    finally:
+        exit()
+
+    debug("-- Finished optimization  --\n")
+    debug("Gamma: %s, Beta: %s\n" % (res.x[0], res.x[1]))
+    debug("Final cost: %s\n" % (res.maxcv))
+
+    best, best_val = g.optimal_score()
+    debug("Optimal Solution: %s, %s\n" % (best, best_val[0]))
+    debug("Best Found Solution: %s, %s\n" % (g.currentScore, g.currentBest))
+
+    debug("\nWriting to %s\n" % (filename))
+    g.save_results(filename)
 
 
-# # gamma vs beta
-# we want to make sure there's actually a gradient, so we plotted stuff.
-# heres the code for plotting stuff plus the actual graphs. 
-# 
-# the code requires slight 
-# 
+def instance_cost(num_instances=20, num_vert=10, num_runs=5):
+    '''
+    For several random problem instances, plot the cost of the output state.
+    Plot average, maximum and minimum cost.
+    '''
+
+    # Prepare several random instances of the problem.
+    instances = [Graph(num_vert) for _ in range(num_instances)]
+
+    # Choose starting values for gamma and beta.
+
+    # For holding iteration number and expected values.
+    its, exps, opts, best_founds = [], [], [], []
+
+    # For progress bar.
+    global pbar
+    pbar = tqdm(total=num_instances*num_runs)
+
+    it = 1
+    # Calculate expected values.
+    for graph in instances:
+        vals = []
+        for _ in range(num_runs):
+            # Use random gamma, beta for each run.
+            gamma = uniform(0, 2*np.pi)
+            beta = uniform(0, np.pi)
+
+            vals.append(get_expectation([gamma, beta], graph))
+
+        # Save results.
+        its.append(it)
+        exps.append(vals)
+        curr_opt = graph.optimal_score()[0]
+        opts.append(curr_opt)
+        best_founds.append(float(graph.currentScore) / curr_opt)
+        it += 1
+
+
+    plt.title("Costs of Random Instances")
+    plt.xlabel("Iteration Number")
+    plt.ylabel("Cost")
+
+    averages = [float(mean(ex))/opt for ex, opt in zip(exps, opts)]
+    lows = [float(min(ex))/opt for ex, opt in zip(exps, opts)]
+    highs = [float(max(ex))/opt for ex, opt in zip(exps, opts)]
+
+    plt.plot(its, averages, color='blue', label='Average Cost %')
+    plt.plot(its, lows, color='green', label='Minimum Cost %')
+    plt.plot(its, highs, color='orange', label='Maximum Cost %')
+    plt.plot(its, best_founds, color='red', label='Best Found Cost %')
+
+instance_cost()
 
 # In[5]:
 
@@ -395,7 +454,6 @@ def hold_constant(vary="gamma"):
 
 
     plt.show()
-hold_constant()
 
 
 # ![gamma vs. exp](img/gamma_change.png)
