@@ -34,7 +34,7 @@ from qiskit import register, available_backends, QuantumCircuit, QuantumRegister
 
 register(Qconfig.APItoken, Qconfig.config["url"])
 pbar = None
-DEBUG = False
+DEBUG = True
 
 def debug(string):
     if DEBUG:
@@ -242,10 +242,6 @@ class Graph():
     def __str__(self):
         return "Graph with %d vertices %d edges.\nAdjacency List: %s" % (self.N, self.E, self.adj)
 
-#graph encoding sample 
-g = Graph(5)
-print(g)
-
 
 # ### Cost and Driver Hamiltonians C and B:
 # 
@@ -320,24 +316,11 @@ def get_expectation(x, g, NUM_SHOTS=1024):
 
     # Try updating progress bar if defined.
     try:
-        res = minimize(neg_get_expectation, [gamma_start, beta_start], args=(g),
-                options=dict(maxiter=2,disp=True), bounds=[(0, 2*np.pi), (0,np.pi)])
-    except KeyboardInterrupt:
-        debug("\nWriting to %s\n" % (filename))
-        g.save_results(filename)
-    finally:
-        exit()
+        pbar.update(1)
+    except:
+        pass
 
-    debug("-- Finished optimization  --\n")
-    debug("Gamma: %s, Beta: %s\n" % (res.x[0], res.x[1]))
-    debug("Final cost: %s\n" % (res.maxcv))
-
-    best, best_val = g.optimal_score()
-    debug("Optimal Solution: %s, %s\n" % (best, best_val[0]))
-    debug("Best Found Solution: %s, %s\n" % (g.currentScore, g.currentBest))
-
-    debug("\nWriting to %s\n" % (filename))
-    g.save_results(filename)
+    return exp
 
 
 def instance_cost(num_instances=20, num_vert=10, num_runs=5):
@@ -391,7 +374,7 @@ def instance_cost(num_instances=20, num_vert=10, num_runs=5):
     plt.plot(its, highs, color='orange', label='Maximum Cost %')
     plt.plot(its, best_founds, color='red', label='Best Found Cost %')
 
-instance_cost()
+#instance_cost()
 
 # In[5]:
 
@@ -401,7 +384,7 @@ def hold_constant(vary="gamma"):
     # Choose some random starting beta/gamma and graph.
     lim = np.pi if vary == "gamma" else 2*np.pi
     constant_var = uniform(0, lim)
-    g = Graph(5)
+    g = Graph(10)
 
     # RUNS # of runs at each gamma for error bars.
     RUNS = 3
@@ -411,6 +394,7 @@ def hold_constant(vary="gamma"):
 
     # The maximum possible expected value is the maximum possible weighted cut.
     opt = g.optimal_score()[0]
+    debug("Running hold_constant!\n")
     debug("Optimal score: %s\n" % (opt))
     
     # Number of data points to collect.
@@ -429,7 +413,6 @@ def hold_constant(vary="gamma"):
         # Calculate expected values.
         vals = []
         for i in range(RUNS):
-        
             # Params are passed in as gamma, beta, so order matters.
             params = [point, constant_var] if vary == "gamma" else [constant_var, point]
             vals.append(get_expectation(params, g))
@@ -454,6 +437,7 @@ def hold_constant(vary="gamma"):
 
 
     plt.show()
+hold_constant()
 
 
 # ![gamma vs. exp](img/gamma_change.png)
