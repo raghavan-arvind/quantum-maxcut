@@ -249,7 +249,7 @@ def run_optimizer(num_nodes, filename="results.csv"):
     g.save_results(filename)
 
 
-def instance_cost(num_instances=20, num_vert=10, num_runs=3):
+def instance_cost(num_instances=20, num_vert=10, num_runs=5):
     '''
     For several random problem instances, plot the cost of the output state.
     Plot average, maximum and minimum cost.
@@ -261,7 +261,7 @@ def instance_cost(num_instances=20, num_vert=10, num_runs=3):
     # Choose starting values for gamma and beta.
 
     # For holding iteration number and expected values.
-    its, exps, opt = [], [], []
+    its, exps, opts, best_founds = [], [], [], []
 
     it = 1
     # Calculate expected values.
@@ -277,7 +277,9 @@ def instance_cost(num_instances=20, num_vert=10, num_runs=3):
         # Save results.
         its.append(it)
         exps.append(vals)
-        opt.append(graph.optimal_score()[0])
+        curr_opt = graph.optimal_score()[0]
+        opts.append(curr_opt)
+        best_founds.append(float(graph.currentScore) / curr_opt)
         it += 1
 
 
@@ -285,18 +287,19 @@ def instance_cost(num_instances=20, num_vert=10, num_runs=3):
     plt.xlabel("Iteration Number")
     plt.ylabel("Cost")
 
+    '''abandoned avenue
     # Sort by optimal value just so it's pleasant to look at.
-    exps = [x for _,x in sorted(zip(opt,exps), key=lambda pair: pair[0])]
-    opt = sorted(opt)
+    #exps = [x for _,x in sorted(zip(opt,exps), key=lambda pair: pair[0])]
+    #opt = sorted(opt)
+    '''
+    averages = [mean(ex)/opt for ex, opt in zip(exps, opts)]
+    lows = [min(ex)/opt for ex, opt in zip(exps, opts)]
+    highs = [max(ex)/opt for ex, opt in zip(exps, opts)]
 
-    averages = [mean(ex) for ex in exps]
-    lows = [min(ex) for ex in exps]
-    highs = [max(ex) for ex in exps]
-
-    plt.plot(its, averages, color='blue', label='Average Cost')
-    plt.plot(its, lows, color='green', label='Minimum Cost')
-    plt.plot(its, highs, color='orange', label='Maximum Cost')
-    plt.plot(its, opt, color='red', label='Optimal Cost')
+    plt.plot(its, averages, color='blue', label='Average Cost %')
+    plt.plot(its, lows, color='green', label='Minimum Cost %')
+    plt.plot(its, highs, color='orange', label='Maximum Cost %')
+    plt.plot(its, best_founds, color='red', label='Best Found Cost %')
 
     plt.legend()
 
