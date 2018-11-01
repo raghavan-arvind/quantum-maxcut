@@ -34,7 +34,7 @@ from qiskit import register, available_backends, QuantumCircuit, QuantumRegister
 
 register(Qconfig.APItoken, Qconfig.config["url"])
 pbar = None
-DEBUG = True
+DEBUG = False
 
 def debug(string):
     if DEBUG:
@@ -398,7 +398,7 @@ def hold_constant(vary="gamma"):
     debug("Optimal score: %s\n" % (opt))
     
     # Number of data points to collect.
-    NUM_RUNS = 100
+    NUM_RUNS = 60
     MIN = 0
     MAX = 2*np.pi if vary == "gamma" else np.pi
     
